@@ -57,41 +57,43 @@ function unproject([a,b,c,d,e,f,g,h],[x,y]){
 const colors = ['#ff66bb','#ff563f','#ffb52f','#ffe758','#46dc85','#38c8ff','#996dff','#ffffff'];
 let color = colors[0];
 let mode = 'idle';
-let closedFrames = 0;
+let anchored = false;
+let lastHandAt = -Infinity;
 
 function resetBrush() {
   mode = 'idle';
-  closedFrames = 0;
   current = null;
 }
 
 // Measure bends in 3D so the gesture works with the hand turned sideways.
 function handPose(hand) {
+  const wrist = hand[0];
+  const reach = p => Math.hypot(p.x-wrist.x, p.y-wrist.y, p.z-wrist.z);
   let curled = 0, extended = 0, indexExtended = false;
   for (const base of [5, 9, 13, 17]) {
     const a = hand[base], joint = hand[base+1], tip = hand[base+3];
     const u = [a.x-joint.x, a.y-joint.y, a.z-joint.z];
     const v = [tip.x-joint.x, tip.y-joint.y, tip.z-joint.z];
     const cosine = (u[0]*v[0]+u[1]*v[1]+u[2]*v[2]) / (Math.hypot(...u)*Math.hypot(...v));
-    if (cosine > -0.25) curled++;
-    if (cosine < -0.75) {
+    const folded = reach(tip) < reach(joint) * 1.04;
+    if (cosine > -0.25 || folded) curled++;
+    if (!folded && cosine < -0.65) {
       extended++;
       if (base === 5) indexExtended = true;
     }
   }
   if (curled >= 3 && !indexExtended) return 'closed';
-  if (extended >= 3 && indexExtended) return 'open';
+  if (extended >= 2 && indexExtended) return 'open';
   return 'between';
 }
 
-function updateBrush(pose) {
+function updateBrush(pose, markerVisible) {
   if (pose === 'closed') {
     current = null;
-    closedFrames++;
-    mode = closedFrames >= 2 ? 'armed' : 'closing';
-  } else {
-    closedFrames = 0;
-    if (mode === 'armed' && pose === 'open') mode = 'painting';
+    mode = 'armed';
+  } else if (mode === 'armed' && pose === 'open') {
+    anchored = markerVisible;
+    mode = 'painting';
   }
 }
 
@@ -114,28 +116,44 @@ function frame(){
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
     const dots = corners(), m = dots && matrix(dots);
     const result = tracker.detectForVideo(video,performance.now());
-    const tip = result.landmarks[0]?.[8], hand = result.worldLandmarks[0];
+    const tip = result.landmarks[0]?.[8], hand = result.worldLandmarks?.[0] ?? result.landmarks[0];
     const inPalette = tip && tip.y >= 0.85 && tip.y <= 1 && tip.x >= 0 && tip.x <= 1;
-    if (tip && hand) updateBrush(handPose(hand));
-    else resetBrush();
+    const now = performance.now();
+    if (now - lastHandAt > 500) resetBrush();
+    if (tip && hand) {
+      lastHandAt = now;
+      updateBrush(handPose(hand), Boolean(m));
+    } else {
+      current = null;
+      if (mode === 'painting') resetBrush();
+    }
     if (inPalette) color = colors[Math.min(colors.length-1,Math.floor(tip.x*colors.length))];
-    if(m && tip && !inPalette && mode === 'painting'){
-      const p=unproject(m,[tip.x*canvas.width,tip.y*canvas.height]);
+    if((!anchored || m) && tip && !inPalette && mode === 'painting'){
+      const p = anchored ? unproject(m,[tip.x*canvas.width,tip.y*canvas.height]) : [tip.x,tip.y];
       if(p.every(Number.isFinite)){
-        if(!current){current={color,points:[]};strokes.push(current);}
+        if(!current){current={color,anchored,points:[]};strokes.push(current);}
         current.points.push(p);
       }
     }else current=null;
-    if(m)for(const stroke of strokes){
+    for(const stroke of strokes){
+      if(stroke.anchored && !m) continue;
       ctx.beginPath();ctx.strokeStyle=stroke.color;ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';
-      stroke.points.forEach((p,i)=>{const [x,y]=project(m,p);if(!i)ctx.moveTo(x-.1,y);ctx.lineTo(x,y)});ctx.stroke();
+      stroke.points.forEach((p,i)=>{const [x,y]=stroke.anchored ? project(m,p) : [p[0]*canvas.width,p[1]*canvas.height];if(!i)ctx.moveTo(x-.1,y);ctx.lineTo(x,y)});ctx.stroke();
     }
     drawPalette();
     if(tip){
       ctx.beginPath();ctx.arc(tip.x*canvas.width,tip.y*canvas.height,7,0,2*Math.PI);
       ctx.fillStyle=color;ctx.fill();ctx.strokeStyle='#19202a';ctx.lineWidth=2;ctx.stroke();
     }
-    $('status').textContent=!dots?'Show all four marker dots':!tip?'Show your painting hand':inPalette?'Selecting color':mode==='armed'?'Open your hand to paint':mode==='painting'?'Painting · make a fist to stop':'Make a fist, then open your hand';
+    let hint = 'Make a fist to start';
+    if (!tip) hint = 'Show your painting hand';
+    else if (mode === 'armed') hint = 'Fist detected · open to paint';
+    else if (inPalette) hint = 'Color selected · move above palette';
+    else if (mode === 'painting') {
+      hint = anchored && !m ? 'Paused · show marker again' :
+        anchored ? 'Painting · anchored to marker' : 'Painting · screen canvas';
+    }
+    if ($('status').textContent !== hint) $('status').textContent = hint;
     $('undo').disabled=!strokes.length;
   }
   requestAnimationFrame(frame);
