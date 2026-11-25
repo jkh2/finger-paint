@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>finger-paint</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101820;color:#fff;font:1rem/1.45 system-ui}main{max-width:800px;margin:auto;padding:16px}h1{margin:0;font-size:2rem}a{color:#87ecd2}canvas{width:100%;display:block;background:#202e37;border-radius:12px}button{border:0;border-radius:10px;background:#91f1d6;color:#102721;font:inherit;font-weight:650;padding:12px 18px;touch-action:none;user-select:none}button:disabled{opacity:.45}nav{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}button.active{background:#ffae82}
+</style>
+<main><h1>finger-paint</h1><p>Print the <a href="marker.svg" target="_blank">four-dot marker</a> or open it on a second screen. Keep all four dots in view. Hold Paint with your phone hand and draw with your other index fingertip. Release to lift the brush.</p>
+<canvas id="view" width="640" height="480"></canvas><nav><button id="start">Start camera</button><button id="paint" disabled>Hold to paint</button><button id="undo" disabled>Undo</button></nav><p id="status" role="status">Camera off</p></main>
+<script type="module" src="paint.js"></script></html>
