@@ -1,5 +1,7 @@
 # finger-paint
 
+**[Try the finger-paint demo](https://jameskeithharwood.com/finger-paint/)**
+
 Paint in the air with your fingertips. The goal is for each stroke to stay where you drew it as you move the camera.
 
 ## First demo
