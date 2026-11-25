@@ -89,7 +89,7 @@ $('start').onclick=async()=>{
     const base='https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304';
     const {FilesetResolver,HandLandmarker}=await import(base+'/vision_bundle.mjs');
     tracker=await HandLandmarker.createFromOptions(await FilesetResolver.forVisionTasks(base+'/wasm'),{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'},runningMode:'VIDEO',numHands:1});
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:640},height:{ideal:480}},audio:false});
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480}},audio:false});
     video.srcObject=stream;await video.play();canvas.width=video.videoWidth;canvas.height=video.videoHeight;
     $('paint').disabled=false;$('start').hidden=true;frame();
   }catch(error){stream?.getTracks().forEach(t=>t.stop());stream=null;tracker?.close();$('status').textContent='Could not start: '+error.message;$('start').disabled=false;}
