@@ -4,7 +4,8 @@ const video = document.createElement('video');
 video.playsInline = true;
 video.muted = true;
 const small = document.createElement('canvas'), scan = small.getContext('2d',{willReadFrequently:true});
-const strokes = [];
+let strokes = [];
+const history = [];
 let tracker, stream, current, previousTime = -1;
 
 // Pick the largest connected blob of each marker color, ignoring isolated pixels.
@@ -55,12 +56,81 @@ function unproject([a,b,c,d,e,f,g,h],[x,y]){
   return [((x-c)*E-B*(y-f))/det,(A*(y-f)-(x-c)*D)/det];
 }
 const colors = ['#ff66bb','#ff563f','#ffb52f','#ffe758','#46dc85','#38c8ff','#996dff','#ffffff'];
+const palette = [...colors, 'erase'];
 let color = colors[0];
+let sweep = null;
+const eraserRadius = () => Math.max(12, Math.min(canvas.width, canvas.height) * 0.035);
+
+function pixelPoint(stroke, p, m) {
+  return stroke.anchored ? project(m,p) : [p[0]*canvas.width,p[1]*canvas.height];
+}
+
+// Split a polyline at the entry and exit points of the eraser disk.
+// Keep untouched strokes by reference so Undo can restore the original geometry.
+function cutStroke(stroke, center, radius, m) {
+  if (stroke.anchored && !m) return [stroke];
+  const pieces = [];
+  let piece = null, changed = false;
+  const add = point => {
+    if (!piece) {
+      piece = {...stroke, points:[]};
+      pieces.push(piece);
+    }
+    piece.points.push(point);
+  };
+  let a = pixelPoint(stroke,stroke.points[0],m);
+  const inside = p => Math.hypot(p[0]-center[0],p[1]-center[1]) <= radius;
+  if (inside(a)) changed = true;
+  else add(stroke.points[0]);
+  for (let i=1; i<stroke.points.length; i++) {
+    const point = stroke.points[i], b = pixelPoint(stroke,point,m);
+    const dx=b[0]-a[0], dy=b[1]-a[1], length=dx*dx+dy*dy;
+    const ox=a[0]-center[0], oy=a[1]-center[1];
+    const dot=ox*dx+oy*dy, disc=dot*dot-length*(ox*ox+oy*oy-radius*radius);
+    if (length && disc>0) {
+      const delta=Math.sqrt(disc);
+      const enter=Math.max(0,(-dot-delta)/length), exit=Math.min(1,(-dot+delta)/length);
+      if (enter < exit) {
+        const boundary = t => {
+          const pixel=[a[0]+t*dx,a[1]+t*dy];
+          return stroke.anchored ? unproject(m,pixel) : [pixel[0]/canvas.width,pixel[1]/canvas.height];
+        };
+        if (enter>0) add(boundary(enter));
+        piece=null;
+        if (exit<1) add(boundary(exit));
+        changed=true;
+      }
+    }
+    if (!inside(b)) add(point);
+    a=b;
+  }
+  return changed ? pieces : [stroke];
+}
+
+function eraseTo(point, m) {
+  current = null;
+  if (!sweep) sweep = {last:point, recorded:false};
+  const radius=eraserRadius(), [x,y]=sweep.last;
+  const dx=point[0]-x, dy=point[1]-y;
+  const steps=Math.max(1,Math.ceil(Math.hypot(dx,dy)/(radius*0.5)));
+  for(let step=1;step<=steps;step++){
+    const center=[x+dx*step/steps,y+dy*step/steps];
+    const next=strokes.flatMap(stroke=>cutStroke(stroke,center,radius,m));
+    if(next.length===strokes.length && next.every((stroke,i)=>stroke===strokes[i])) continue;
+    if(!sweep.recorded){
+      history.push({before:strokes});
+      sweep.recorded=true;
+    }
+    strokes=next;
+  }
+  sweep.last=point;
+}
 let mode = 'idle';
 let anchored = false;
 let lastHandAt = -Infinity;
 
 function resetBrush() {
+  sweep = null;
   mode = 'idle';
   current = null;
 }
@@ -98,10 +168,15 @@ function updateBrush(pose, markerVisible) {
 }
 
 function drawPalette() {
-  const top = canvas.height * 0.85, width = canvas.width / colors.length;
-  colors.forEach((swatch,i) => {
-    ctx.fillStyle = swatch;
+  const top = canvas.height * 0.85, width = canvas.width / palette.length;
+  palette.forEach((swatch,i) => {
+    ctx.fillStyle = swatch === 'erase' ? '#354354' : swatch;
     ctx.fillRect(i*width,top,width+1,canvas.height-top);
+    if (swatch === 'erase') {
+      ctx.fillStyle='white'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.font='bold '+Math.max(10,Math.min(width*0.26,24))+'px system-ui';
+      ctx.fillText('Erase',(i+0.5)*width,(top+canvas.height)/2);
+    }
     if (swatch === color) {
       ctx.strokeStyle = '#14202a'; ctx.lineWidth = 4;
       ctx.strokeRect(i*width+4,top+4,width-8,canvas.height-top-8);
@@ -139,11 +214,14 @@ function frame(){
       current = null;
       if (mode === 'painting') resetBrush();
     }
-    if (inPalette) color = colors[Math.min(colors.length-1,Math.floor(displayX(tip.x)*colors.length))];
-    if((!anchored || m) && tip && !inPalette && mode === 'painting'){
+    if (inPalette) color = palette[Math.min(palette.length-1,Math.floor(displayX(tip.x)*palette.length))];
+    const active = tip && !inPalette && mode === 'painting';
+    if (active && color === 'erase') eraseTo([tip.x*canvas.width,tip.y*canvas.height],m);
+    else sweep=null;
+    if(color !== 'erase' && (!anchored || m) && tip && !inPalette && mode === 'painting'){
       const p = anchored ? unproject(m,[tip.x*canvas.width,tip.y*canvas.height]) : [tip.x,tip.y];
       if(p.every(Number.isFinite)){
-        if(!current){current={color,anchored,points:[]};strokes.push(current);}
+        if(!current){current={color,anchored,points:[]};strokes.push(current);history.push({added:current});}
         current.points.push(p);
       }
     }else current=null;
@@ -154,24 +232,26 @@ function frame(){
     }
     drawPalette();
     if(tip){
-      ctx.beginPath();ctx.arc(displayX(tip.x)*canvas.width,tip.y*canvas.height,7,0,2*Math.PI);
-      ctx.fillStyle=color;ctx.fill();ctx.strokeStyle='#19202a';ctx.lineWidth=2;ctx.stroke();
+      ctx.beginPath();ctx.arc(displayX(tip.x)*canvas.width,tip.y*canvas.height,color==='erase'?eraserRadius():7,0,2*Math.PI);
+      if(color==='erase'){ctx.strokeStyle='white';ctx.lineWidth=5;ctx.stroke();}
+      else {ctx.fillStyle=color;ctx.fill();}
+      ctx.strokeStyle='#19202a';ctx.lineWidth=2;ctx.stroke();
     }
     let hint = 'Make a fist to start';
     if (!tip) hint = 'Show your painting hand';
-    else if (mode === 'armed') hint = 'Fist detected · open to paint';
-    else if (inPalette) hint = 'Color selected · move above palette';
+    else if (mode === 'armed') hint = (color==='erase'?'Fist detected · open to erase':'Fist detected · open to paint');
+    else if (inPalette) hint = (color==='erase'?'Eraser selected · move above palette':'Color selected · move above palette');
     else if (mode === 'painting') {
-      hint = anchored && !m ? 'Paused · show marker again' :
+      hint = color==='erase' ? 'Erasing · make a fist to stop' : anchored && !m ? 'Paused · show marker again' :
         anchored ? 'Painting · anchored to marker' : 'Painting · screen canvas';
     }
     if ($('status').textContent !== hint) $('status').textContent = hint;
-    $('undo').disabled=!strokes.length;
+    $('undo').disabled=!history.length;
   }
   requestAnimationFrame(frame);
 }
 window.addEventListener('blur',resetBrush);
-$('undo').onclick=()=>{resetBrush();strokes.pop();};
+$('undo').onclick=()=>{resetBrush();const action=history.pop();if(action?.before) strokes=action.before;else if(action?.added) strokes.pop();$('undo').disabled=!history.length;};
 $('start').onclick=async()=>{
   $('start').disabled=true;$('status').textContent='Loading hand tracking…';
   try{
