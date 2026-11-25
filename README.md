@@ -6,7 +6,7 @@ Paint in the air with your fingertips. The goal is for each stroke to stay where
 
 ## First demo
 
-Start on a Samsung Galaxy A15 5G with the rear camera, one index fingertip, and one color. Draw a heart above a chair, lower your hand, and step sideways. The heart should remain above the same spot. This repository currently contains the project brief. PC webcam support is also planned.
+Start on a Samsung Galaxy A15 5G with the front-facing camera, one index fingertip, and one color. Draw a heart above a chair, lower your hand, and step sideways. The heart should remain above the same spot. This repository currently contains the project brief. PC webcam support is also planned.
 
 ## Five fingers, five brushes
 
