@@ -6,7 +6,7 @@ Paint in the air with your fingertips. The goal is for each stroke to stay where
 
 ## First demo
 
-Start on a Samsung Galaxy A15 5G with the front-facing camera, one index fingertip, and one color. Draw a heart above a chair, lower your hand, and step sideways. The heart should remain above the same spot. This repository currently contains the project brief. PC webcam support is also planned.
+Open the demo on your phone and keep the four-dot marker in view of the front camera. Dip your index fingertip into the palette at the bottom of the camera view. Make a fist, then open your hand to paint with the selected color. Close your fist to stop. The demo anchors strokes to the marker plane. The first test phone is a Samsung Galaxy A15 5G.
 
 ## Five fingers, five brushes
 
