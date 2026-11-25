@@ -3,6 +3,6 @@
 <style>
 *{box-sizing:border-box}body{margin:0;background:#101820;color:#fff;font:1rem/1.45 system-ui}main{max-width:800px;margin:auto;padding:16px}h1{margin:0;font-size:2rem}a{color:#87ecd2}canvas{width:100%;display:block;background:#202e37;border-radius:12px}button{border:0;border-radius:10px;background:#91f1d6;color:#102721;font:inherit;font-weight:650;padding:12px 18px;touch-action:none;user-select:none}button:disabled{opacity:.45}nav{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
 </style>
-<main><h1>finger-paint</h1><p>Print the <a href="marker.svg" target="_blank">four-dot marker</a> or open it on a second screen. Keep all four dots in view. Dip your index fingertip into a color at the bottom. Make a fist and open your hand to paint. Make a fist again to stop.</p>
-<canvas id="view" width="640" height="480"></canvas><nav><button id="start">Start camera</button><button id="undo" disabled>Undo</button></nav><p id="status" role="status">Camera off</p></main>
-<script type="module" src="paint.js"></script></html>
+<main><h1>finger-paint</h1><p>For anchored strokes, print the <a href="marker.svg" target="_blank">four-dot marker</a> or open it on a second screen. Keep all four dots in view as you open your fist. Without the marker, paint stays on the screen. Dip your index fingertip into a color at the bottom. Make a fist and open your hand to paint. Make a fist again to stop.</p>
+<p id="status" role="status">Camera off</p><canvas id="view" width="640" height="480"></canvas><nav><button id="start">Start camera</button><button id="undo" disabled>Undo</button></nav></main>
+<script type="module" src="paint.js?v=2"></script></html>
