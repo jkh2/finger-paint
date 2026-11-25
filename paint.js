@@ -109,11 +109,23 @@ function drawPalette() {
   });
 }
 
+let mirrorPreview = true;
+
+function displayX(cameraX) {
+  return mirrorPreview ? 1 - cameraX : cameraX;
+}
+
 function frame(){
   if(!stream)return;
   if(video.currentTime!==previousTime && video.readyState>=2){
     previousTime=video.currentTime;
+    ctx.save();
+    if (mirrorPreview) {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
+    ctx.restore();
     const dots = corners(), m = dots && matrix(dots);
     const result = tracker.detectForVideo(video,performance.now());
     const tip = result.landmarks[0]?.[8], hand = result.worldLandmarks?.[0] ?? result.landmarks[0];
@@ -127,7 +139,7 @@ function frame(){
       current = null;
       if (mode === 'painting') resetBrush();
     }
-    if (inPalette) color = colors[Math.min(colors.length-1,Math.floor(tip.x*colors.length))];
+    if (inPalette) color = colors[Math.min(colors.length-1,Math.floor(displayX(tip.x)*colors.length))];
     if((!anchored || m) && tip && !inPalette && mode === 'painting'){
       const p = anchored ? unproject(m,[tip.x*canvas.width,tip.y*canvas.height]) : [tip.x,tip.y];
       if(p.every(Number.isFinite)){
@@ -138,11 +150,11 @@ function frame(){
     for(const stroke of strokes){
       if(stroke.anchored && !m) continue;
       ctx.beginPath();ctx.strokeStyle=stroke.color;ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';
-      stroke.points.forEach((p,i)=>{const [x,y]=stroke.anchored ? project(m,p) : [p[0]*canvas.width,p[1]*canvas.height];if(!i)ctx.moveTo(x-.1,y);ctx.lineTo(x,y)});ctx.stroke();
+      stroke.points.forEach((p,i)=>{const [x,y]=stroke.anchored ? project(m,p) : [p[0]*canvas.width,p[1]*canvas.height];const screenX=displayX(x/canvas.width)*canvas.width;if(!i)ctx.moveTo(screenX-.1,y);ctx.lineTo(screenX,y)});ctx.stroke();
     }
     drawPalette();
     if(tip){
-      ctx.beginPath();ctx.arc(tip.x*canvas.width,tip.y*canvas.height,7,0,2*Math.PI);
+      ctx.beginPath();ctx.arc(displayX(tip.x)*canvas.width,tip.y*canvas.height,7,0,2*Math.PI);
       ctx.fillStyle=color;ctx.fill();ctx.strokeStyle='#19202a';ctx.lineWidth=2;ctx.stroke();
     }
     let hint = 'Make a fist to start';
@@ -167,6 +179,7 @@ $('start').onclick=async()=>{
     const {FilesetResolver,HandLandmarker}=await import(base+'/vision_bundle.mjs');
     tracker=await HandLandmarker.createFromOptions(await FilesetResolver.forVisionTasks(base+'/wasm'),{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'},runningMode:'VIDEO',numHands:1});
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480}},audio:false});
+    mirrorPreview = stream.getVideoTracks()[0].getSettings().facingMode !== 'environment';
     video.srcObject=stream;await video.play();canvas.width=video.videoWidth;canvas.height=video.videoHeight;
     $('start').hidden=true;frame();
   }catch(error){stream?.getTracks().forEach(t=>t.stop());stream=null;tracker?.close();$('status').textContent='Could not start: '+error.message;$('start').disabled=false;}
