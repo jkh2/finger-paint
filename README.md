@@ -6,7 +6,7 @@ Paint in the air with your fingertips. The goal is for each stroke to stay where
 
 ## First demo
 
-Open the demo on your phone and keep the four-dot marker in view of the front camera. Dip your index fingertip into the palette at the bottom of the camera view. Make a fist, then open your hand to paint with the selected color. Close your fist to stop. The demo anchors strokes to the marker plane. The first test phone is a Samsung Galaxy A15 5G.
+Open the demo on your phone. You can paint directly on the camera view, or show the four-dot marker to anchor a stroke. Dip your index fingertip into the palette at the bottom of the camera view. Make a fist, then open your hand to paint with the selected color. Close your fist to stop. Each stroke uses the marker plane if the marker is visible when you open your fist. Otherwise it stays on the screen. The first test phone is a Samsung Galaxy A15 5G.
 
 ## Five fingers, five brushes
 
