@@ -5,7 +5,7 @@ video.playsInline = true;
 video.muted = true;
 const small = document.createElement('canvas'), scan = small.getContext('2d',{willReadFrequently:true});
 const strokes = [];
-let tracker, stream, held = false, current, previousTime = -1;
+let tracker, stream, current, previousTime = -1;
 
 // Pick the largest connected blob of each marker color, ignoring isolated pixels.
 function corners() {
@@ -54,35 +54,94 @@ function unproject([a,b,c,d,e,f,g,h],[x,y]){
   const A=a-x*g,B=b-x*h,D=d-y*g,E=e-y*h,det=A*E-B*D;
   return [((x-c)*E-B*(y-f))/det,(A*(y-f)-(x-c)*D)/det];
 }
+const colors = ['#ff66bb','#ff563f','#ffb52f','#ffe758','#46dc85','#38c8ff','#996dff','#ffffff'];
+let color = colors[0];
+let mode = 'idle';
+let closedFrames = 0;
+
+function resetBrush() {
+  mode = 'idle';
+  closedFrames = 0;
+  current = null;
+}
+
+// Measure bends in 3D so the gesture works with the hand turned sideways.
+function handPose(hand) {
+  let curled = 0, extended = 0, indexExtended = false;
+  for (const base of [5, 9, 13, 17]) {
+    const a = hand[base], joint = hand[base+1], tip = hand[base+3];
+    const u = [a.x-joint.x, a.y-joint.y, a.z-joint.z];
+    const v = [tip.x-joint.x, tip.y-joint.y, tip.z-joint.z];
+    const cosine = (u[0]*v[0]+u[1]*v[1]+u[2]*v[2]) / (Math.hypot(...u)*Math.hypot(...v));
+    if (cosine > -0.25) curled++;
+    if (cosine < -0.75) {
+      extended++;
+      if (base === 5) indexExtended = true;
+    }
+  }
+  if (curled >= 3 && !indexExtended) return 'closed';
+  if (extended >= 3 && indexExtended) return 'open';
+  return 'between';
+}
+
+function updateBrush(pose) {
+  if (pose === 'closed') {
+    current = null;
+    closedFrames++;
+    mode = closedFrames >= 2 ? 'armed' : 'closing';
+  } else {
+    closedFrames = 0;
+    if (mode === 'armed' && pose === 'open') mode = 'painting';
+  }
+}
+
+function drawPalette() {
+  const top = canvas.height * 0.85, width = canvas.width / colors.length;
+  colors.forEach((swatch,i) => {
+    ctx.fillStyle = swatch;
+    ctx.fillRect(i*width,top,width+1,canvas.height-top);
+    if (swatch === color) {
+      ctx.strokeStyle = '#14202a'; ctx.lineWidth = 4;
+      ctx.strokeRect(i*width+4,top+4,width-8,canvas.height-top-8);
+    }
+  });
+}
+
 function frame(){
   if(!stream)return;
   if(video.currentTime!==previousTime && video.readyState>=2){
     previousTime=video.currentTime;
     ctx.drawImage(video,0,0,canvas.width,canvas.height);
-    const dots=corners(),tip=tracker.detectForVideo(video,performance.now()).landmarks[0]?.[8];
-    const m=dots && matrix(dots);
-    if(m && tip && held){
+    const dots = corners(), m = dots && matrix(dots);
+    const result = tracker.detectForVideo(video,performance.now());
+    const tip = result.landmarks[0]?.[8], hand = result.worldLandmarks[0];
+    const inPalette = tip && tip.y >= 0.85 && tip.y <= 1 && tip.x >= 0 && tip.x <= 1;
+    if (tip && hand) updateBrush(handPose(hand));
+    else resetBrush();
+    if (inPalette) color = colors[Math.min(colors.length-1,Math.floor(tip.x*colors.length))];
+    if(m && tip && !inPalette && mode === 'painting'){
       const p=unproject(m,[tip.x*canvas.width,tip.y*canvas.height]);
       if(p.every(Number.isFinite)){
-        if(!current){current=[];strokes.push(current);}
-        current.push(p);
+        if(!current){current={color,points:[]};strokes.push(current);}
+        current.points.push(p);
       }
     }else current=null;
     if(m)for(const stroke of strokes){
-      ctx.beginPath();ctx.strokeStyle='#ff66bb';ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';
-      stroke.forEach((p,i)=>{const [x,y]=project(m,p);if(!i){ctx.moveTo(x-.1,y);};ctx.lineTo(x,y)});ctx.stroke();
+      ctx.beginPath();ctx.strokeStyle=stroke.color;ctx.lineWidth=5;ctx.lineCap='round';ctx.lineJoin='round';
+      stroke.points.forEach((p,i)=>{const [x,y]=project(m,p);if(!i)ctx.moveTo(x-.1,y);ctx.lineTo(x,y)});ctx.stroke();
     }
-    if(tip){ctx.beginPath();ctx.arc(tip.x*canvas.width,tip.y*canvas.height,7,0,2*Math.PI);ctx.strokeStyle='white';ctx.lineWidth=2;ctx.stroke();}
-    $('status').textContent=!dots?'Show all four marker dots':!tip?'Marker found · show your index finger':held?'Painting':'Ready · hold Paint to draw';
+    drawPalette();
+    if(tip){
+      ctx.beginPath();ctx.arc(tip.x*canvas.width,tip.y*canvas.height,7,0,2*Math.PI);
+      ctx.fillStyle=color;ctx.fill();ctx.strokeStyle='#19202a';ctx.lineWidth=2;ctx.stroke();
+    }
+    $('status').textContent=!dots?'Show all four marker dots':!tip?'Show your painting hand':inPalette?'Selecting color':mode==='armed'?'Open your hand to paint':mode==='painting'?'Painting · make a fist to stop':'Make a fist, then open your hand';
     $('undo').disabled=!strokes.length;
   }
   requestAnimationFrame(frame);
 }
-function release(){held=false;current=null;$('paint').classList.remove('active');}
-$('paint').onpointerdown=e=>{e.preventDefault();$('paint').setPointerCapture(e.pointerId);held=true;$('paint').classList.add('active');};
-$('paint').onlostpointercapture=release;
-window.addEventListener('blur',release);
-$('undo').onclick=()=>{release();strokes.pop();};
+window.addEventListener('blur',resetBrush);
+$('undo').onclick=()=>{resetBrush();strokes.pop();};
 $('start').onclick=async()=>{
   $('start').disabled=true;$('status').textContent='Loading hand tracking…';
   try{
@@ -91,6 +150,6 @@ $('start').onclick=async()=>{
     tracker=await HandLandmarker.createFromOptions(await FilesetResolver.forVisionTasks(base+'/wasm'),{baseOptions:{modelAssetPath:'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'},runningMode:'VIDEO',numHands:1});
     stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'user'},width:{ideal:640},height:{ideal:480}},audio:false});
     video.srcObject=stream;await video.play();canvas.width=video.videoWidth;canvas.height=video.videoHeight;
-    $('paint').disabled=false;$('start').hidden=true;frame();
+    $('start').hidden=true;frame();
   }catch(error){stream?.getTracks().forEach(t=>t.stop());stream=null;tracker?.close();$('status').textContent='Could not start: '+error.message;$('start').disabled=false;}
 };
